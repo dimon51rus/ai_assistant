@@ -9,6 +9,7 @@ import json
 import uuid
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from icalendar import Calendar   # <--- ДОБАВЛЕН ИМПОРТ
 
 load_dotenv()
 
@@ -128,11 +129,17 @@ def process_command(user_message: str) -> (bool, str):
 
             result = f"📅 Ваши события на {day_label}:\n"
             for event in events:
-                event_str = str(event)
-                summary = "Без названия"
-                if "SUMMARY:" in event_str:
-                    summary = event_str.split("SUMMARY:")[1].split("\n")[0].strip()
-                result += f"  • {summary}\n"
+                # --- ИСПРАВЛЕННЫЙ ПАРСИНГ С ИСПОЛЬЗОВАНИЕМ icalendar ---
+                try:
+                    cal = Calendar.from_ical(event.data)
+                    for component in cal.walk('VEVENT'):
+                        summary = component.get('SUMMARY', 'Без названия')
+                        if isinstance(summary, bytes):
+                            summary = summary.decode('utf-8')
+                        result += f"  • {summary}\n"
+                except Exception as e:
+                    # Если парсинг не удался, выводим fallback
+                    result += f"  • (ошибка парсинга: {e})\n"
             return True, result
         except Exception as e:
             return True, f"❌ Ошибка при получении календаря: {e}"
