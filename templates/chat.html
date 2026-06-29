@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ИИ-секретарь</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .chat-container {
+            width: 700px;
+            max-width: 95%;
+            height: 85vh;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .chat-header {
+            background: #1a73e8;
+            color: white;
+            padding: 16px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .chat-messages {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            background: #f9f9f9;
+        }
+        .message {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+        .message.user {
+            align-items: flex-end;
+        }
+        .message.assistant {
+            align-items: flex-start;
+        }
+        .bubble {
+            max-width: 80%;
+            padding: 10px 16px;
+            border-radius: 16px;
+            word-wrap: break-word;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .message.user .bubble {
+            background: #1a73e8;
+            color: white;
+        }
+        .message.assistant .bubble {
+            background: #e8eaed;
+            color: #202124;
+        }
+        .chat-input {
+            display: flex;
+            padding: 12px;
+            border-top: 1px solid #ddd;
+            background: white;
+        }
+        .chat-input input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 24px;
+            outline: none;
+            font-size: 14px;
+        }
+        .chat-input input:focus {
+            border-color: #1a73e8;
+        }
+        .chat-input button {
+            background: #1a73e8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 24px;
+            margin-left: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .chat-input button:hover {
+            background: #1557b0;
+        }
+        .empty-state {
+            text-align: center;
+            color: #888;
+            padding: 40px 0;
+        }
+        .typing-indicator {
+            display: none;
+            padding: 10px 16px;
+            background: #e8eaed;
+            border-radius: 16px;
+            margin: 5px 0;
+            color: #555;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">🤖 ИИ-секретарь</div>
+        <div class="chat-messages" id="messages">
+            {% if history %}
+                {% for msg in history %}
+                    <div class="message {{ msg.role }}">
+                        <div class="bubble">{{ msg.content }}</div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <p>👋 Привет! Напиши мне, и я помогу.</p>
+                </div>
+            {% endif %}
+            <div id="typing" class="typing-indicator">Секретарь печатает...</div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="messageInput" placeholder="Введите запрос..." autofocus>
+            <button id="sendBtn">Отправить</button>
+        </div>
+    </div>
+
+    <script>
+        const input = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const messagesDiv = document.getElementById('messages');
+        const typingDiv = document.getElementById('typing');
+
+        function addMessage(role, content) {
+            const empty = messagesDiv.querySelector('.empty-state');
+            if (empty) empty.remove();
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message ' + role;
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            bubble.textContent = content;
+            msgDiv.appendChild(bubble);
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text) return;
+            addMessage('user', text);
+            input.value = '';
+            input.disabled = true;
+            sendBtn.disabled = true;
+            typingDiv.style.display = 'block';
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await response.json();
+                typingDiv.style.display = 'none';
+                addMessage('assistant', data.response || 'Ошибка: нет ответа');
+            } catch (error) {
+                typingDiv.style.display = 'none';
+                addMessage('assistant', 'Ошибка соединения с сервером');
+                console.error(error);
+            } finally {
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
+            }
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+        window.onload = function() {
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            input.focus();
+        };
+    </script>
+</body>
+</html>
