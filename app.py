@@ -57,7 +57,7 @@ def add_task(description, due_date=None):
     task = {
         "id": str(uuid.uuid4()),
         "description": description,
-        "due_date": due_date,   # формат "YYYY-MM-DD HH:MM" или None
+        "due_date": due_date,
         "created_at": datetime.now().isoformat(),
         "completed": False
     }
@@ -84,37 +84,68 @@ def delete_task(task_id):
     tasks = load_tasks()
     new_tasks = [t for t in tasks if t["id"] != task_id]
     if len(new_tasks) == len(tasks):
-        return None  # задача не найдена
+        return None
     save_tasks(new_tasks)
     return True
 
 # ==================================================
-# ========== ОБРАБОТКА КОМАНД ПОЛЬЗОВАТЕЛЯ ========
+# ========== ИНИЦИАЛИЗАЦИЯ КЛИЕНТА КАЛЕНДАРЯ ======
 # ==================================================
-# Инициализируем клиент для календаря (глобально)
-# Значения подтянутся из .env
+
 calendar_client = YandexCalendar(
     username=os.getenv("YANDEX_USERNAME"),
     password=os.getenv("YANDEX_PASSWORD")
 )
+
+# ==================================================
+# ========== ОБРАБОТКА КОМАНД =====================
+# ==================================================
+
 def process_command(user_message: str) -> (bool, str):
     """
+    Обрабатывает команды пользователя.
     Возвращает (обработано_ли_команда, ответ_текст)
-    Если команда распознана, возвращает True и ответ.
-    Иначе возвращает False и пустую строку.
     """
     msg_lower = user_message.lower().strip()
     tasks = load_tasks()
 
-    # --- Команда: добавить задачу ---
-    if msg_lower.startswith(("запланируй", "добавь задачу", "создай задачу", "новая задача")):
-        # Пытаемся извлечь описание и дату
+    # ========== 1. КОМАНДЫ ДЛЯ КАЛЕНДАРЯ ==========
+    if any(phrase in msg_lower for phrase in [
+        "календарь", "события", "что у меня сегодня", "что у меня завтра",
+        "сегодняшние", "завтрашние", "покажи задачи в моем календаре",
+        "все задачи в календаре", "покажи календарь", "мои события"
+    ]):
+        try:
+            if "завтра" in msg_lower or "завтрашн" in msg_lower:
+                events = calendar_client.get_events_for_tomorrow()
+                day_label = "завтра"
+            else:
+                events = calendar_client.get_events_for_today()
+                day_label = "сегодня"
+
+            if not events:
+                return True, f"📭 На {day_label} событий не запланировано."
+
+            result = f"📅 Ваши события на {day_label}:\n"
+            for event in events:
+                event_str = str(event)
+                summary = "Без названия"
+                if "SUMMARY:" in event_str:
+                    summary = event_str.split("SUMMARY:")[1].split("\n")[0].strip()
+                result += f"  • {summary}\n"
+            return True, result
+        except Exception as e:
+            return True, f"❌ Ошибка при получении календаря: {e}"
+
+    # ========== 2. КОМАНДЫ ДЛЯ ЗАДАЧ ==========
+
+    # --- Добавить задачу ---
+    if any(msg_lower.startswith(prefix) for prefix in ["запланируй", "добавь задачу", "создай задачу", "новая задача"]):
+        rest = user_message
         for prefix in ["запланируй", "добавь задачу", "создай задачу", "новая задача"]:
             if msg_lower.startswith(prefix):
                 rest = user_message[len(prefix):].strip()
                 break
-        else:
-            rest = user_message
 
         due_date = None
         if "завтра" in rest:
@@ -131,8 +162,8 @@ def process_command(user_message: str) -> (bool, str):
         else:
             return True, "❌ Не удалось распознать описание задачи. Укажите, что нужно сделать."
 
-    # --- Команда: показать задачи ---
-    if msg_lower.startswith(("покажи задачи", "список задач", "мои задачи", "задачи")):
+    # --- Показать задачи ---
+    if any(msg_lower.startswith(prefix) for prefix in ["покажи задачи", "список задач", "мои задачи", "задачи"]):
         tasks = list_tasks(show_completed=False)
         if not tasks:
             return True, "📭 Нет активных задач."
@@ -142,76 +173,8 @@ def process_command(user_message: str) -> (bool, str):
             result += f"{i}. {task['description']}{due}\n   ID: {task['id'][:8]}\n"
         return True, result
 
-def process_command(user_message: str) -> (bool, str):
-    """
-    Возвращает (обработано_ли_команда, ответ_текст)
-    """
-    msg_lower = user_message.lower().strip()
-    tasks = load_tasks()
-    user_message_lower = user_message.lower()
-
-    # --- Команда: добавить задачу ---
-    if any(msg_lower.startswith(prefix) for prefix in ["запланируй", "добавь задачу", "создай задачу", "новая задача"]):
-        # ... (код для добавления задачи без изменений) ...
-        pass # Оставьте ваш существующий код
-
-    # --- НОВАЯ КОМАНДА: показать события календаря ---
-    if user_message_lower in ["покажи календарь", "что у меня сегодня", "мои события"]:
-        try:
-            events = calendar_client.get_events_for_today()
-            if not events:
-                return True, "📭 На сегодня событий не запланировано."
-            
-            result = "📅 Ваши события на сегодня:\n"
-            for event in events:
-                # Парсим данные события из формата iCalendar
-                # Это упрощенный пример, для продакшена лучше использовать библиотеку icalendar
-                event_str = str(event)
-                summary = "Без названия"
-                if "SUMMARY:" in event_str:
-                    summary = event_str.split("SUMMARY:")[1].split("\n")[0].strip()
-                result += f"  - {summary}\n"
-            return True, result
-        except Exception as e:
-            return True, f"❌ Ошибка при получении календаря: {e}"
-
-    # --- НОВАЯ КОМАНДА: показать события на завтра ---
-    if user_message_lower in ["что у меня завтра", "завтрашние события", "покажи завтра"]:
-        try:
-            events = calendar_client.get_events_for_tomorrow()
-            if not events:
-                return True, "📭 На завтра событий не запланировано."
-            
-            result = "📅 Ваши события на завтра:\n"
-            for event in events:
-                event_str = str(event)
-                summary = "Без названия"
-                if "SUMMARY:" in event_str:
-                    summary = event_str.split("SUMMARY:")[1].split("\n")[0].strip()
-                result += f"  - {summary}\n"
-            return True, result
-        except Exception as e:
-            return True, f"❌ Ошибка при получении календаря: {e}"
-
-    # --- Команда: показать задачи ---
-    if any(msg_lower.startswith(prefix) for prefix in ["покажи задачи", "список задач", "мои задачи", "задачи"]):
-        # ... (код для показа задач без изменений) ...
-        pass # Оставьте ваш существующий код
-
-    # --- Команда: выполнить задачу ---
+    # --- Выполнить задачу ---
     if any(msg_lower.startswith(prefix) for prefix in ["выполни задачу", "заверши задачу", "отметь как выполненную"]):
-        # ... (код для выполнения задачи без изменений) ...
-        pass # Оставьте ваш существующий код
-
-    # --- Команда: удалить задачу ---
-    if any(msg_lower.startswith(prefix) for prefix in ["удали задачу", "удалить задачу"]):
-        # ... (код для удаления задачи без изменений) ...
-        pass # Оставьте ваш существующий код
-
-    # Если ни одна команда не подошла
-    return False, ""
-    # --- Команда: выполнить задачу ---
-    if msg_lower.startswith(("выполни задачу", "заверши задачу", "отметь как выполненную")):
         words = user_message.split()
         task_id = None
         for word in words:
@@ -234,8 +197,8 @@ def process_command(user_message: str) -> (bool, str):
         else:
             return True, "❌ Задача с таким ID не найдена."
 
-    # --- Команда: удалить задачу ---
-    if msg_lower.startswith(("удали задачу", "удалить задачу")):
+    # --- Удалить задачу ---
+    if any(msg_lower.startswith(prefix) for prefix in ["удали задачу", "удалить задачу"]):
         words = user_message.split()
         task_id = None
         for word in words:
@@ -263,7 +226,7 @@ def process_command(user_message: str) -> (bool, str):
 # ========== ХРАНИЛИЩЕ ИСТОРИИ =====================
 # ==================================================
 
-chat_history = []  # список {"role": "user"|"assistant", "content": "..."}
+chat_history = []
 
 # ==================================================
 # ========== МОДЕЛЬ ЗАПРОСА ========================
@@ -325,14 +288,12 @@ async def chat(request: ChatRequest):
     global chat_history
     user_message = request.message
 
-    # --- Проверяем, не является ли сообщение командой ---
     is_command, cmd_response = process_command(user_message)
     if is_command:
         chat_history.append({"role": "user", "content": user_message})
         chat_history.append({"role": "assistant", "content": cmd_response})
         return {"response": cmd_response}
 
-    # --- Обычный запрос к YandexGPT ---
     chat_history.append({"role": "user", "content": user_message})
     answer = ask_yandexgpt(user_message, chat_history[:-1])
     chat_history.append({"role": "assistant", "content": answer})
